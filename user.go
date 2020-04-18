@@ -8,9 +8,8 @@ import (
 	"strings"
 )
 
-
 func main() {
-	host := "192.168.1.7:10000"
+	host := "localhost:10000"
 	proto := "tcp4"
 	connection := connectToServer(host, proto)
 	go getMessages(connection)
@@ -58,6 +57,5 @@ func getMessages(conn *net.Conn) {
 			fmt.Println(string(buffer[0:n]))
 		}
 	}
-
 
 }
