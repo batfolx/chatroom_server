@@ -16,10 +16,15 @@ func main() {
 
 type ChatRoomData struct {
 	messages    []string
-	connections []*net.Conn
+	connections []*ConnInfo
 }
 
-var connections map[string]*net.Conn
+type ConnInfo struct {
+	connection *net.Conn
+	name       string
+}
+
+var connections map[string]*ConnInfo
 
 // we will have map of strings to ChatRoomData structs
 // the map will have a key of a chat room name (chat room 1)
@@ -29,7 +34,8 @@ var chatRooms map[string]*ChatRoomData
 func StartServer(host string, protocol string) {
 	fmt.Println("Starting server")
 
-	connections = map[string]*net.Conn{}
+	connections = map[string]*ConnInfo{}
+	chatRooms = map[string]*ChatRoomData{}
 
 	listener, err := net.Listen(protocol, host)
 	if err != nil {
@@ -51,11 +57,15 @@ func StartServer(host string, protocol string) {
 				fmt.Printf("Did not get name from user")
 			} else {
 				name := string(buffer[:n])
-				connections[name] = &conn
+				connections[name] = &ConnInfo{
+					connection: &conn,
+					name:       name,
+				}
 				fmt.Println("Got connection from " + name)
 				chatRoom := chooseChatRoom(&conn)
 				fmt.Printf("Chatroom number: %s\n", chatRoom)
-				go handleConnection(&conn, name)
+				handleChatRoom(chatRoom, connections[name])
+				go handleConnection(&conn, name, chatRoom)
 			}
 		}
 	}
@@ -93,12 +103,10 @@ func chooseChatRoom(conn *net.Conn) string {
 		} else {
 			(*conn).Write([]byte("You need to specify a single number."))
 		}
-
 	}
-
 }
 
-func handleConnection(conn *net.Conn, name string) {
+func handleConnection(conn *net.Conn, name string, chatRoom string) {
 	defer (*conn).Close()
 	for {
 		buffer := make([]byte, 512)
@@ -107,7 +115,7 @@ func handleConnection(conn *net.Conn, name string) {
 			fmt.Printf("Lost connection from %s\n", (*conn).RemoteAddr())
 			return
 		} else {
-			if string(buffer[0:n]) == "users" {
+			if string(buffer[0:n]) == "users all" {
 				users := ""
 
 				for name, _ := range connections {
@@ -116,38 +124,35 @@ func handleConnection(conn *net.Conn, name string) {
 				(*conn).Write([]byte(users))
 				continue
 			}
-			message := fmt.Sprintf("%s: %s", name, string(buffer[:n]))
-			for key, connection := range connections {
-				_, err = (*connection).Write([]byte(message))
+			if string(buffer[0:n]) == "users" {
+				users := ""
+				for _, c := range chatRooms[chatRoom].connections {
+					users += fmt.Sprintf("User: %s; Online\n", (*c).name)
+				}
+				continue
+			}
+
+			message := []byte(fmt.Sprintf("%s: %s", name, string(buffer[:n])))
+			for i, conn := range chatRooms[chatRoom].connections {
+				_, err := (*conn.connection).Write(message)
 				if err != nil {
-					delete(connections, key)
+					chatRooms[chatRoom].connections = append(chatRooms[chatRoom].connections[i:], chatRooms[chatRoom].connections[:i+1]...)
 				}
 			}
 		}
 	}
 }
 
-func handleChatRoom(chatRoom string, conn *net.Conn, message string) {
+func handleChatRoom(chatRoom string, conn *ConnInfo) {
 	var messages []string
-	var conns []*net.Conn
-
+	var conns []*ConnInfo
+	fmt.Printf("Before checking if key exists: %v\n", chatRooms[chatRoom])
 	/* If the chat room exists already, we can append messages and connections directly */
 	if msgs, exists := chatRooms[chatRoom]; exists {
-
-		// get the existing messages from the ChatRoomData struct
-		// and add the new message to the list of messages and send it to everyone
-		messages = msgs.messages
-		messages = append(messages, message)
 		conns = msgs.connections
 		conns = append(conns, conn)
-
 		chatRooms[chatRoom].connections = conns
-		chatRooms[chatRoom].messages = messages
-		for _, c := range chatRooms[chatRoom].connections {
-			(*c).Write([]byte(message))
-		}
 	} else {
-		messages = append(messages, message)
 		conns = append(conns, conn)
 		data := ChatRoomData{
 			messages:    messages,
@@ -155,4 +160,13 @@ func handleChatRoom(chatRoom string, conn *net.Conn, message string) {
 		}
 		chatRooms[chatRoom] = &data
 	}
+}
+
+func checkCommands(buffer string, conns map[string]*net.Conn) bool {
+
+	if buffer == "users" {
+
+	}
+	return true
+
 }
