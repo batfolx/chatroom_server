@@ -64,13 +64,14 @@ func StartServer(host string, protocol string) {
 				fmt.Println("Got connection from " + name)
 				chatRoom := chooseChatRoom(&conn)
 				fmt.Printf("Chatroom number: %s\n", chatRoom)
-				handleChatRoom(chatRoom, connections[name])
+				addUserToChatRoom(chatRoom, connections[name])
 				go handleConnection(&conn, name, chatRoom)
 			}
 		}
 	}
 }
 
+/* We get the chat room that the user wants to select and return it to index */
 func chooseChatRoom(conn *net.Conn) string {
 
 	// we send the options to the user
@@ -106,6 +107,7 @@ func chooseChatRoom(conn *net.Conn) string {
 	}
 }
 
+/* This handles the sending of the messages  */
 func handleConnection(conn *net.Conn, name string, chatRoom string) {
 	defer (*conn).Close()
 	for {
@@ -143,7 +145,7 @@ func handleConnection(conn *net.Conn, name string, chatRoom string) {
 	}
 }
 
-func handleChatRoom(chatRoom string, conn *ConnInfo) {
+func addUserToChatRoom(chatRoom string, conn *ConnInfo) {
 	var messages []string
 	var conns []*ConnInfo
 	fmt.Printf("Before checking if key exists: %v\n", chatRooms[chatRoom])
@@ -170,3 +172,5 @@ func checkCommands(buffer string, conns map[string]*net.Conn) bool {
 	return true
 
 }
+
+func switchChatRooms(conn *net.Conn, chatRoom string) {}
