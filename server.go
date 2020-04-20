@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 )
 
 func main() {
@@ -117,6 +118,14 @@ func chooseChatRoom(conn *net.Conn) string {
 /* This handles the sending of the messages  */
 func handleConnection(conn *net.Conn, name string, chatRoom string) {
 	defer (*conn).Close()
+
+	/* We send the messages to the user asynchronously */
+	go func() {
+		for _, msg := range chatRooms[chatRoom].messages {
+			(*conn).Write([]byte(msg + "\n"))
+		}
+	}()
+
 	for {
 		buffer := make([]byte, 512)
 		n, err := (*conn).Read(buffer)
@@ -124,12 +133,16 @@ func handleConnection(conn *net.Conn, name string, chatRoom string) {
 			fmt.Printf("Lost connection from %s\n", (*conn).RemoteAddr())
 			return
 		} else {
-			if checkCommands(conn, string(buffer[0:n]), chatRoom) {
+			if checkCommands(conn, string(buffer[0:n]), &chatRoom) {
 				continue
 			}
-
+			/* read in the message, then add it to all of the messages */
 			message := []byte(fmt.Sprintf("%s: %s", name, string(buffer[:n])))
+			chatRooms[chatRoom].messages = append(chatRooms[chatRoom].messages, string(message))
 			for i, conn := range chatRooms[chatRoom].connections {
+				if conn == nil {
+					continue
+				}
 				_, err := (*conn.connection).Write(message)
 				if err != nil {
 					chatRooms[chatRoom].connections = append(chatRooms[chatRoom].connections[i:], chatRooms[chatRoom].connections[:i+1]...)
@@ -158,31 +171,66 @@ func addUserToChatRoom(chatRoom string, conn *ConnInfo) {
 	}
 }
 
-func checkCommands(conn *net.Conn, buffer string, chatRoom string) bool {
+func checkCommands(conn *net.Conn, buffer string, chatRoom *string) bool {
 
 	if buffer == "users all" {
 		users := ""
 
 		for _, chatRoomData := range chatRooms {
 			for _, c := range chatRoomData.connections {
+				if c == nil {
+					continue
+				}
 				users += fmt.Sprintf("User: %s; Online\n", (*c).name)
 			}
-
 		}
 		(*conn).Write([]byte(users))
 		return true
 	}
 	if buffer == "users" {
 		users := ""
-		for _, c := range chatRooms[chatRoom].connections {
+		for _, c := range chatRooms[*chatRoom].connections {
+			if c == nil {
+				continue
+			}
 			users += fmt.Sprintf("User: %s; Online\n", (*c).name)
 		}
 		(*conn).Write([]byte(users))
 		return true
 	}
+	if strings.Contains(buffer, "switch") {
+		newChatRoom := strings.Fields(buffer)[1]
+		fmt.Printf("New chat room: %s\n", newChatRoom)
+		switchChatRooms(conn, chatRoom, newChatRoom)
+		(*conn).Write([]byte(fmt.Sprintf("Switched from chat room %s to chat room %s!", chatRoom, newChatRoom)))
+		return true
+	}
 	return false
 }
 
-func switchChatRooms(conn *net.Conn, chatRoom string) {
+func switchChatRooms(conn *net.Conn, oldChatRoom *string, newChatRoom string) {
+	// TODO fix switching a user into a different chat room
+	tempConn := ConnInfo{}
+	index := -1
+	for i, c := range chatRooms[*oldChatRoom].connections {
+		if *conn == nil || *c.connection == nil {
+			continue
+		}
+		if *conn == *c.connection {
+			tempConn.connection = conn
+			tempConn.currentChatRoom = *oldChatRoom
+			tempConn.name = (*c).name
+			index = i
+			break
+		}
+	}
+
+	addUserToChatRoom(newChatRoom, &tempConn)
+	if index != -1 {
+		chatRooms[*oldChatRoom].connections[index] = nil
+		*oldChatRoom = newChatRoom
+	}
+
+	// we change the value of the chatroom to be pointing to something different
 
 }
