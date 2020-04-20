@@ -14,17 +14,18 @@ func main() {
 
 }
 
+/* This struct holds the messages and users connected to a specific chat room */
 type ChatRoomData struct {
 	messages    []string
 	connections []*ConnInfo
 }
 
+/* This struct keeps a connection object along with the persons name and the chat room they are currently in */
 type ConnInfo struct {
-	connection *net.Conn
-	name       string
+	connection      *net.Conn
+	name            string
+	currentChatRoom string
 }
-
-var connections map[string]*ConnInfo
 
 // we will have map of strings to ChatRoomData structs
 // the map will have a key of a chat room name (chat room 1)
@@ -34,7 +35,7 @@ var chatRooms map[string]*ChatRoomData
 func StartServer(host string, protocol string) {
 	fmt.Println("Starting server")
 
-	connections = map[string]*ConnInfo{}
+	//connections = map[string]*ConnInfo{}
 	chatRooms = map[string]*ChatRoomData{}
 
 	listener, err := net.Listen(protocol, host)
@@ -50,21 +51,27 @@ func StartServer(host string, protocol string) {
 		if err != nil {
 			fmt.Printf("Error in establishing connectiont to %s\n", conn)
 		} else {
-			fmt.Printf("Connections: %v\n", connections)
-			buffer := make([]byte, 2048)
+			buffer := make([]byte, 1028)
 			n, err := conn.Read(buffer)
 			if err != nil {
 				fmt.Printf("Did not get name from user")
+				conn.Close()
 			} else {
 				name := string(buffer[:n])
-				connections[name] = &ConnInfo{
-					connection: &conn,
-					name:       name,
-				}
+
 				fmt.Println("Got connection from " + name)
+				// once we get the name, we prompt the user to get the chat room they want to go to
 				chatRoom := chooseChatRoom(&conn)
+
+				// create a ConnInfo struct to store information about a particular connection
+				connInfo := &ConnInfo{
+					connection:      &conn,
+					name:            name,
+					currentChatRoom: chatRoom,
+				}
+
 				fmt.Printf("Chatroom number: %s\n", chatRoom)
-				addUserToChatRoom(chatRoom, connections[name])
+				addUserToChatRoom(chatRoom, connInfo)
 				go handleConnection(&conn, name, chatRoom)
 			}
 		}
@@ -117,20 +124,7 @@ func handleConnection(conn *net.Conn, name string, chatRoom string) {
 			fmt.Printf("Lost connection from %s\n", (*conn).RemoteAddr())
 			return
 		} else {
-			if string(buffer[0:n]) == "users all" {
-				users := ""
-
-				for name, _ := range connections {
-					users += fmt.Sprintf("User: %s; Online\n", name)
-				}
-				(*conn).Write([]byte(users))
-				continue
-			}
-			if string(buffer[0:n]) == "users" {
-				users := ""
-				for _, c := range chatRooms[chatRoom].connections {
-					users += fmt.Sprintf("User: %s; Online\n", (*c).name)
-				}
+			if checkCommands(conn, string(buffer[0:n]), chatRoom) {
 				continue
 			}
 
@@ -148,13 +142,13 @@ func handleConnection(conn *net.Conn, name string, chatRoom string) {
 func addUserToChatRoom(chatRoom string, conn *ConnInfo) {
 	var messages []string
 	var conns []*ConnInfo
-	fmt.Printf("Before checking if key exists: %v\n", chatRooms[chatRoom])
 	/* If the chat room exists already, we can append messages and connections directly */
 	if msgs, exists := chatRooms[chatRoom]; exists {
 		conns = msgs.connections
 		conns = append(conns, conn)
 		chatRooms[chatRoom].connections = conns
 	} else {
+		// else we need to create the chat room
 		conns = append(conns, conn)
 		data := ChatRoomData{
 			messages:    messages,
@@ -164,13 +158,31 @@ func addUserToChatRoom(chatRoom string, conn *ConnInfo) {
 	}
 }
 
-func checkCommands(buffer string, conns map[string]*net.Conn) bool {
+func checkCommands(conn *net.Conn, buffer string, chatRoom string) bool {
 
-	if buffer == "users" {
+	if buffer == "users all" {
+		users := ""
 
+		for _, chatRoomData := range chatRooms {
+			for _, c := range chatRoomData.connections {
+				users += fmt.Sprintf("User: %s; Online\n", (*c).name)
+			}
+
+		}
+		(*conn).Write([]byte(users))
+		return true
 	}
-	return true
-
+	if buffer == "users" {
+		users := ""
+		for _, c := range chatRooms[chatRoom].connections {
+			users += fmt.Sprintf("User: %s; Online\n", (*c).name)
+		}
+		(*conn).Write([]byte(users))
+		return true
+	}
+	return false
 }
 
-func switchChatRooms(conn *net.Conn, chatRoom string) {}
+func switchChatRooms(conn *net.Conn, chatRoom string) {
+
+}
